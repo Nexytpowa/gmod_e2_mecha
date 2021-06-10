@@ -1,1 +1,2 @@
 expression2/ linguist-language=C++
+*.rb linguist-language=C++
