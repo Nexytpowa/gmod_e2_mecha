@@ -1,0 +1,15 @@
+function entity:createWire(Ent:entity, Array:array)
+{
+    for(I = 1, Array:count())
+    {
+        This:createWire(Ent, Array[I, string], Array[I, string])    
+    }    
+}
+
+function entity:createWire(Ent:entity, ArrayIN:array, ArrayOUT:array)
+{
+    for(I = 1, ArrayIN:count())
+    {
+        This:createWire(Ent, ArrayIN[I, string], ArrayOUT[I, string])    
+    }   
+}

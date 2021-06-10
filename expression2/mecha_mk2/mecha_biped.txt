@@ -1,0 +1,89 @@
+@persist ValidBoneTable:table UpperBodyBone:number
+@persist BoneHierarchy:table BoneDefaultAng:array PelvisDefaultPos:vector
+@persist BoneGroups:table
+
+if(first())
+{
+    PelvisDefaultPos = vec(-0.000005,-0.78846, 37.913784)
+    UpperBodyBone = 9
+	
+    ValidBoneTable = table(
+	       "ValveBiped.Bip01_Pelvis" = 1,
+	       "ValveBiped.Bip01_R_Thigh" = 2,
+	       "ValveBiped.Bip01_R_Calf" = 3,
+	       "ValveBiped.Bip01_R_Foot" = 4,
+	       "ValveBiped.Bip01_L_Thigh" = 5,
+	       "ValveBiped.Bip01_L_Calf" = 6,
+	       "ValveBiped.Bip01_L_Foot" = 7,
+	       "ValveBiped.Bip01_Spine" = 8,
+	       "ValveBiped.Bip01_Spine1" = 9,
+        "ValveBiped.Bip01_Spine2" = 10,
+        "ValveBiped.Bip01_Spine4" = 11,
+        "ValveBiped.Bip01_Neck1" = 12,
+        "ValveBiped.Bip01_Head1" = 13,
+        "ValveBiped.Bip01_R_Clavicle" = 14,
+        "ValveBiped.Bip01_R_UpperArm" = 15,
+        "ValveBiped.Bip01_R_Forearm" = 16,
+        "ValveBiped.Bip01_R_Hand" = 17,
+        "ValveBiped.Bip01_L_Clavicle" = 18,
+        "ValveBiped.Bip01_L_UpperArm" = 19,
+        "ValveBiped.Bip01_L_Forearm" = 20,
+        "ValveBiped.Bip01_L_Hand" = 21
+    )
+	
+    BoneHierarchy = table(
+        2 = 1,
+        3 = 2,
+        4 = 3,
+        5 = 1,
+        6 = 5,
+        7 = 6,
+        8 = 1,
+        9 = 8,
+        10 = 9,
+        11 = 10,
+        12 = 11,
+        13 = 12,
+        14 = 11,
+        15 = 14,
+        16 = 15,
+        17 = 16,
+        18 = 11,
+        19 = 18,
+        20 = 19,
+        21 = 20
+    )
+    
+    #First group should contain the pelvis, don't forget to put the groups in order too!
+    BoneGroups = table(
+        array(1, 2,3,4, 5,6,7, 8), #legs + spine base
+        array(9,10,11,12,13), #body 
+        array(14,15,16,17), #right arm
+        array(18,19,20,21) #left arm
+    )
+	
+    #These angles are BASED on the alyx playermodel's .qc file
+    BoneDefaultAng = array(
+        ang(0, 0, 89.999982),
+        ang(2.966031, -87.691938, -89.999982), 
+        ang(0, 2.959557, 0), 
+        ang(12.672166, -67.209437, 4.392066), 
+        ang(2.966031, -92.308197, -89.999982),
+        ang(0, 2.959556, 0),					
+        ang(-13.371105, -66.979021, -4.207672),
+        ang(-1.602964, 89.999982, 89.999982),
+        ang(0, -6.452308, 0),
+        ang(0, -0.723932, 0),
+        ang(0, 8.927427, 0),
+        ang(0, 12.841531, 179.999855),
+        ang(0, 6.295659, 0),
+        ang(76.440513, 166.163749, -97.982465),
+        ang(-10.977413, -43.834945, 90.098528),
+        ang(-0.000005, -11.66015, 0),
+        ang(2.211433, 2.080008, -85.770066),
+        ang(-76.440397, 166.164378, 93.870917),
+        ang(13.809087, -43.179363, -87.04598),
+        ang(0.000005, -11.662213, 0),
+        ang(-2.2119, 2.080007, 86.253992)
+    )
+}

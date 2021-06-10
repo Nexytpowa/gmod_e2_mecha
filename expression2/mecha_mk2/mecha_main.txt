@@ -1,0 +1,250 @@
+@name Mecha main
+@inputs CamController:entity Pod:entity
+@inputs W A S D Space Mouse2 Shift Active CamDir:vector CamAng:angle CurrentWepVelocity:number
+@outputs CamPos:vector CamParent:entity UnRoll:number CamSetAng:angle OffsetAngDbg:angle FOV InZoom
+@persist Pos:vector Ang:angle EyeDir:vector MoveSpeed RunSpeedCoef JumpForce DuckSpeed LastGoodPos:vector LastKeys ZVelocity 
+@persist InJump ChangedInAir
+@persist HoldingWep OnEntityPos:vector OnEntity OnWhichEntity:entity CamHoloID:number CamHolo:entity NextPos:vector
+@persist CurrentWeapon:entity DefaultFOV ZoomLevel
+@trigger all
+
+#Mecha E2 made by Nexy STEAM_0:1:63923714, feel free to ask questions or make suggestions
+#Supports core mechanics such as physics and hand-gun aiming, the rest is up to you.
+#It is required you also give the header files to the person you are giving this e2 to, this includes the stdio folder and mecha_core & biped
+#Do remember to not abuse certains values for your own gain, keeps things at least a little realistic to keep battles fun
+
+#TODO list:
+# - Add ACF engine support so your mechas will be dependant on them
+# - 
+
+#Known bugs:
+# - DuplicateMecha changes the gun's roll angle
+# - 
+#If anyone spoonfeeds me on how to fix these bugs it would be appreciated
+
+#include "mecha_mk2/mecha_core"
+
+if(first())
+{
+    #Values are defined in source units
+    MoveSpeed = 250
+    RunSpeedCoef = 1.7
+    JumpForce = 350
+    DuplicateMecha = 1 #change this if you want to respawn a new mecha, i'd recommend letting it at 1
+    DefaultFOV = 90
+    ZoomLevel = 4
+    
+    MoveSpeed *= tickInterval()
+    JumpForce *= tickInterval()
+    DuckSpeed = MoveSpeed*0.5
+    
+    CamController:createWire(entity(), array("Position", "Parent", "UnRoll", "FilterEntities", "FOV"), array("CamPos", "CamParent", "UnRoll", "Props", "FOV"))
+    entity():createWire(CamController, array("Angle", "HitPos", "CamDir"), array("CamSetAng", "HitPos", "CamDir"))
+    entity():createWire(Pod, array("W", "A", "S", "D", "Space", "Shift", "Active", "Mouse2"))
+	   
+    #Comment these 2 lines if you don't wanna see a holo skeleton
+    linkBones(0.7)
+    scaleBonesHolo(0.7)
+    
+    BaseEnt = holoEntity(0) #holoID 0 represents the holo the skeleton is parented to, it is a valid ID apparently
+    
+    rangerPersist(1)
+    rangerHitWater(1)
+    rangerHitEntities(1)
+    
+    UnRoll = 1
+    HoldingWep = 1 #Change this variable if you don't want to aim
+    
+    CamHoloID = 90
+    local ParentBone = 13
+    CamHolo = holoCreate(CamHoloID), holoScale(CamHoloID, vec(0))
+    holoPos(CamHoloID, holoEntity(ParentBone):pos() + vec(10,0,0))
+    holoParent(CamHoloID, ParentBone)
+    
+    CamPos = holoEntity(CamHoloID):pos()
+    CamParent = holoEntity(CamHoloID)   
+    
+    function void anims_PostJump()
+    {
+        loadAnim(1, "whole_crouch", 30)
+    }
+}
+
+
+
+if(Ready & perf(97))
+{
+    if(changed(Ready))
+    {
+        Pos = BaseEnt:pos()
+                
+        WeaponList[1, entity]:createWire(Pod, array("Fire"), array("Mouse1"))
+        entity():createWire(WeaponList[1, entity], array("CurrentWepVelocity"), array("Muzzle Velocity"))
+        print("Mecha is ready to be used.")
+    }
+    holoAng(CamHoloID, CamSetAng)
+    
+    rangerFilter(Props) 
+    holoAng(0, Ang - ang(0,-90,0))
+    
+
+    #Ground mechanics
+
+    local Driver = Seat:driver()
+    local DriverAng = (Driver ? Seat:toLocal(Driver:eyeAngles()) : ang(0,0,0))
+    EyeDir = DriverAng:forward()
+    Ang = DriverAng:setPitch(0)
+    
+
+    local GroundRay = rangerOffset(Pos + vec(0,0,MechaHeight), Pos - vec(0,0,10000))
+    local GroundDist = GroundRay:distance() - MechaHeight
+    local Solid = GroundRay:startSolid() #This will let you know if the mech is inside the map
+    local InAir = (abs(GroundDist) > 4)
+    ChangedInAir = changed(InAir)
+    local Jumped = (Space & !InAir)
+
+    #Checks if an entity was found under the mech
+    OnWhichEntity = GroundRay:entity()
+    OnEntity = ((OnWhichEntity:isValid()) * !InAir)
+    local ChangedOnEntity = changed(OnEntity)
+    
+    if(OnEntity)
+    {
+        if(ChangedOnEntity)
+        {
+            OnEntityPos = OnWhichEntity:toLocal(Pos)    
+        }   
+        Pos = OnWhichEntity:toWorld(OnEntityPos) 
+    }
+
+
+    if(InAir)
+    {
+        ZVelocity -= gravity()*tickInterval()*tickInterval()
+    }
+    else
+    {
+        ZVelocity = 0
+        InJump = 0
+        if(Jumped)
+        {
+            ZVelocity += JumpForce
+            InJump = 1
+        }
+    }
+
+    #Solid is 1 when the mecha is inside the world
+    if(Solid)
+    {
+       Pos = LastGoodPos   
+    }
+    else
+    {
+        Pos = LastGoodPos = vec(Pos:x(), Pos:y(), clamp(Pos:z() + ZVelocity, GroundRay:pos():z(), 50000))
+    }
+
+    LastKeys = W + A*2 + S*4 + D*8 + Driver:keyDuck()*16 + Shift*32
+    local IsMoving = W+A+S+D
+    local IsRunning = (Shift ? RunSpeedCoef : 1)
+
+    if(Jumped)
+    {
+        loadAnim(1, "lower_jump_rpg", 30)
+        setAnimCallback(1, "anims_PostJump")
+    }
+    elseif(changed(LastKeys) | (ChangedInAir & !InAir))
+    {
+        if(bAnd(LastKeys, 31) & !Solid)
+        {
+            local Offset = ""
+            Offset += (W ? "n" : (S?"s" :"") )
+            Offset += (A ? "w" : (D?"e" :"") )
+            
+            local Duck = Driver:keyDuck()
+            local AnimFile = "whole"+ (Duck ? "_crouch" : "") + (IsMoving ? "_run_" : "") + Offset
+            local FPS = 30 * IsRunning
+            if(HoldingWep)
+            {
+                loadAnim(1, AnimFile, FPS)
+                loadAnim(array(2,3,4), "whole_idle_rpg", 30)
+            }
+            else
+            {
+                loadAnim(0, AnimFile, FPS)    
+            }
+            IsTaunting = 0
+        }
+        else
+        {
+            loadAnim(0, "whole_idle_rpg", 60)
+        }    
+    }
+
+    if(IsMoving)
+    {
+        PelvisFreeze = 1 #default running animations have an offset pelvis to represent movement, we disable this.
+        local NewDir = DriverAng:forward():setZ(0):normalized()
+        local Forward = NewDir * (W - S)
+        local Right = DriverAng:right() * (D - A)
+        NextPos = (Forward + Right):normalized() * (Driver:keyDuck() ? DuckSpeed : MoveSpeed*IsRunning  )
+    
+        if(OnEntity)
+        {
+            OnEntityPos = OnWhichEntity:toLocal(Pos + NextPos)
+        }
+        else
+        {
+            Pos += NextPos 
+        }
+        holoPos(0, Pos + vec(0,0,OffsetPelvis:z()))
+    }
+    else
+    {
+        PelvisFreeze = 0   
+        holoPos(0, Pos + OffsetPelvis)
+    }
+
+
+#######
+# Spine + Hand Aim mechanics
+
+    if(~Mouse2 & Mouse2) 
+    {
+        InZoom = !InZoom    
+    }
+    FOV = (InZoom ? DefaultFOV/ZoomLevel : DefaultFOV)
+
+
+    if(Active & HoldingWep & !IsTaunting)
+    {    
+        rangerFilter(Props)
+        local EyeRD = rangerOffset(CamHolo:pos(), CamHolo:pos() + EyeDir*65535)
+    
+        local CurrentWeapon = WeaponList[1, entity]
+        local WeaponDir = CurrentWeapon:forward()
+        
+        #The good thing about holo mechas is that movement doesn't affect where you shoot since it doesn't rely on source engine's velocity mechanics,
+        #so theres no real need for this prediction thing
+        #local Dist = EyeRD:distance()
+        #local Prediction = (IsMoving ? (NextPos/tickInterval())*(Dist/(CurrentWepVelocity/0.01905)*2) : vec(0))
+    
+        local TrueDir = (EyeRD:pos() - CurrentWeapon:pos()):normalized()
+        local DotDir = WeaponDir:dot(TrueDir)
+        local BackBone = holoEntity(10)
+        local A = (TrueDir:toAngle() - WeaponDir:toAngle())
+    
+        local Ang = BackBone:angles() + A
+        holoAng(10, Ang )
+    
+        local WeaponDir2 = CurrentWeapon:forward()
+        local TrueDir2 = (EyeRD:pos() - CurrentWeapon:pos()):normalized()
+        local AA = (TrueDir2:toAngle() - WeaponDir2:toAngle())
+    
+        local AngA = holoEntity(17):angles() + AA
+        holoAng(17, AngA)
+    }
+    #Aim mechanics
+    
+    
+}
+

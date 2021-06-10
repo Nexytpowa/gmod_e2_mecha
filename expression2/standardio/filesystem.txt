@@ -1,0 +1,117 @@
+@persist FileQueueNames:array FileQueueContent:array FileQueueType:array 
+@persist CheckWrite:number CheckLoad:number CheckList:number
+@outputs FileLoadNames:array FileLoadCallbacks:array Loading:number Tries 
+@persist FileListPaths:array FileListCallbacks:array Listing:number
+
+interval(1000)
+
+if(CheckWrite)
+{
+	if(fileCanWrite())
+	{
+		if(FileQueueType[1, number] == 1) #Erase & write to file
+		{
+			fileWrite(FileQueueNames[1, string], FileQueueContent[1, string])
+		}
+		elseif(FileQueueType[1, number] == 2) #Append to file
+		{
+			fileAppend(FileQueueNames[1, string], FileQueueContent[1, string])
+		}
+		
+		FileQueueNames:removeString(1)
+		FileQueueContent:removeString(1)
+		FileQueueType:removeNumber(1)
+		
+		if(FileQueueNames:count() + FileQueueContent:count() == 0)
+			{CheckWrite=0}
+	}
+}
+if(CheckLoad)
+{
+	if(Loading == 1 && fileLoaded() || fileClk())
+	{
+		if(fileStatus() == _FILE_OK)
+		{
+			FileLoadCallbacks[1, string](fileRead())
+			FileLoadCallbacks:removeString(1)
+			FileLoadNames:removeString(1)
+			Loading = 0
+		}
+	}
+	elseif(Loading == 0)
+	{
+		if(FileLoadCallbacks:count() + FileLoadNames:count() == 0)
+			{CheckLoad = 0}
+		elseif(fileCanLoad())
+		{
+			fileLoad(FileLoadNames[1, string])
+			Loading = 1
+		}
+	}
+}
+if(CheckList)
+{
+	if(Listing == 1 && fileLoadedList() || fileListClk())
+	{
+		FileListCallbacks[1, string](fileReadList())
+		FileListCallbacks:removeString(1)
+		FileListPaths:removeString(1)
+		Listing = 0
+	}
+	elseif(Listing == 0)
+	{
+		if(FileListCallbacks:count() + FileListPaths:count() == 0)
+			{CheckList = 0}
+		elseif(fileCanList())
+		{
+			fileList(FileListPaths[1, string])
+			Listing = 1
+		}
+	}
+}
+
+if(first())
+{
+	runOnFile(1)
+	
+	function void fileQueueWrite(FileName:string, Content:string)
+	{
+		if(fileCanWrite())
+		{
+			fileWrite(FileName, Content)
+		}
+		else
+		{
+			FileQueueNames:pushString(FileName)
+			FileQueueContent:pushString(Content)
+			FileQueueType:pushNumber(1)
+			CheckWrite = 1
+		}
+	}
+	function void fileQueueAppend(FileName:string, Content:string)
+	{
+		if(fileCanWrite())
+		{
+			fileAppend(FileName, Content)
+		}
+		else
+		{
+			FileQueueNames:pushString(FileName)
+			FileQueueContent:pushString(Content)
+			FileQueueType:pushNumber(2)
+			CheckWrite = 1
+		}
+	}
+	function void fileList(Path:string, CallBack:string)
+	{
+		FileListPaths:pushString(Path)
+		FileListCallbacks:pushString(CallBack)
+		CheckList = 1
+	}
+	function void fileLoad(FileName:string, CallBack:string)
+	{
+		FileLoadNames:pushString(FileName)
+		FileLoadCallbacks:pushString(CallBack)		
+		CheckLoad = 1
+	}
+}

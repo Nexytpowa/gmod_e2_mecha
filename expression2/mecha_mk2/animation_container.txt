@@ -1,0 +1,129 @@
+@name animation container
+@outputs Container:entity
+@outputs AnimTable:table PelvisOffsets:table AnimInfo:table 
+@persist AnimCount:number AnimList:array AnimLines:array ParseTable:table
+@persist ParseStep ParseStatus [ParseStart ParseFrame ParseBone ParseLine TotalBones TotalFrames]:number ParseArray:array ParsePelvisArr:array
+@persist Timer
+
+#include "stdio"
+
+if(first())
+{
+    Container = entity()
+    
+    function onFileExploded(Lines:array)
+    {
+        local Name = AnimList[ParseStep+1, string]
+        Name = Name:sub(1, Name:length()-4)
+        
+        local HeaderSize = 2
+        local FrameCount = Lines[1, string]:explode(" ")
+        local BoneCount = Lines[2, string]:explode(" ")
+        TotalFrames = FrameCount[1, string]:toNumber()
+        TotalBones = BoneCount[1, string]:toNumber()
+        
+        AnimInfo[Name, table] = 
+        table( 
+            FrameCount[2, string] = TotalFrames,
+            BoneCount[2, string] = TotalBones 
+        )
+        
+        AnimTable[Name, table] = table()
+        for(I = 1, TotalBones)
+        {
+            AnimTable[Name, table]:pushArray(array())
+        }
+        PelvisOffsets[Name, array] = array()
+        ParsePelvisArr = PelvisOffsets[Name, array]
+        
+        ParseStatus++
+        ParseStep++
+        ParseBone = 1
+        ParseFrame = 1
+        ParseLine = HeaderSize+1
+        AnimLines = Lines
+        ParseTable = AnimTable[Name, table]
+        ParseArray = ParseTable[ParseBone, array]
+        
+    }
+    function onFileRead(File:string)
+    {
+        File:explodeAsync("\n", "onFileExploded")
+    }
+    function onListLoaded(Read:array)
+    {
+        if(Read:count() == 0)
+        {
+            print("No animation file found in animation folder")
+            return
+        }
+        AnimCount = Read:count()
+        AnimList = Read:clone()
+        fileLoad("animations/"+AnimList[1, string], "onFileRead")
+    }
+    fileList("animations/", "onListLoaded")
+    Timer = time()
+}
+
+interval(100)
+
+switch(ParseStatus)
+{
+    case 0, #Explode animation file
+       if(changed(ParseStep))
+        {
+            if(ParseStep < AnimCount & AnimCount)
+            {
+                fileLoad("animations/"+AnimList[ParseStep+1, string], "onFileRead")
+            }
+            elseif(ParseStep)
+            {
+                print("Loaded "+AnimCount+" Animations in "+(time()-Timer)+" seconds.")  
+            }
+        }
+    break
+    
+    case 1, #Parse pelvis offset
+    
+        while(perf(90))
+        {
+            local Str = AnimLines[ParseLine, string]:explode(" ")
+            local Vec = vec(Str[2, string]:toNumber(), Str[1, string]:toNumber(), Str[3, string]:toNumber())
+            ParsePelvisArr:pushVector( Vec )
+            
+            ParseFrame++
+            ParseLine++
+            if(ParseFrame > TotalFrames)
+            {
+                ParseFrame = 1
+                ParseStatus = 2, break
+            }
+        }
+    
+    break
+    case 2, #Parse anim lines
+        while(perf(90))
+        {
+            local Str = AnimLines[ParseLine, string]:explode(" ")
+            local A = ang(Str[1, string]:toNumber(), Str[2, string]:toNumber(), Str[3, string]:toNumber())
+            ParseArray:pushAngle(A)
+            
+            ParseFrame++
+            ParseLine++
+            if(ParseFrame > TotalFrames)
+            {
+                ParseFrame = 1
+                ParseBone++
+                if(ParseBone > TotalBones)
+                {
+                    ParseStatus = 0,
+                    print("Loaded "+ParseStep+"/"+AnimCount+" animations")
+                    break  
+                }    
+                ParseArray = ParseTable[ParseBone, array]
+            }
+        }
+    break
+}
+
+

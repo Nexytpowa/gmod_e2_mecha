@@ -1,0 +1,517 @@
+@inputs Seat:entity AnimationContainer:entity AdvEntityMarker:array 
+@inputs WeaponStockMarker:entity WeaponInputArray:array
+
+@outputs Props:array PropDelayedParent:array
+
+@persist [AnimationTable, AnimationInfo, PelvisOffsets]:table PelvisAnim:array  
+@persist MechaHeight FreezePelvis ScaleHeight:vector OffsetPelvis:vector SpawnOffset:vector
+@persist [GroupAnimationInfo GroupFPS GroupTick GroupAnim]:table [GroupHasCallback GroupCallback]:table
+@persist Ready Status DuplicateMecha
+@persist PropStep [PropSpawnList PropParentList PropIsACF]:array PropWeapons:table
+@persist [WeaponStockTable AmmoStockTable EngineStockTable FuelStockTable]:table 
+@persist [WeaponList EngineList FuelList AmmoList]:array
+@persist BaseEnt:entity SeatEnt:entity SeatPos:vector SeatAng:angle
+@persist IsTaunting
+
+#Alpha version, don't mind the mess if you got the e2 now instead of waiting!
+#NOTE: most of the code was written in notepad, so don't mind the weird formatting
+#PERFORMANCE: The main e2 along with this header should run at about 
+
+#include "stdio"
+
+
+if(first())
+{
+    #include "mecha_mk2/mecha_biped"
+	
+    SpawnOffset = -vec(20,100,0)
+	
+    if(AdvEntityMarker:count() == 0) #no linked bones
+        {print("Entity marker has 0 bones attached. EXIT"), exit()}
+    elseif(AdvEntityMarker:count() != ValidBoneTable:count())
+        {print("Entity marker does not have the correct amount of valid bones. EXIT"), exit()}
+    if(!AnimationContainer)
+        {print("No animation container E2 found! Please attach one. EXIT"), exit()}
+        
+    local E2 = AnimationContainer:wirelink()
+    AnimationTable = E2["AnimTable", table]
+    AnimationInfo = E2["AnimInfo", table]
+    PelvisOffsets = E2["PelvisOffsets", table]
+        
+    BaseEnt = AdvEntityMarker[1, entity] 
+    BaseEnt:setAng(ang(0,90,0))
+	
+    #Setup holos & bone order
+    for(I = 1, AdvEntityMarker:count())
+    {
+        local Pos = AdvEntityMarker[I, entity]:pos()
+        holoCreate(I), holoPos(I, Pos), holoScale(I, vec(0)) 
+        local A = BoneDefaultAng[I, angle]
+        holoAng(I, (I == 1 ? BaseEnt:toWorld(A) : holoEntity(BoneHierarchy[I, number]):toWorld(A)))
+    }
+    
+    #Create bones base holo
+    holoCreate(0), holoPos(0, holoEntity(1):pos()), holoScale(0, vec(0))
+    holoParent(1, 0)
+    
+    #Setup bone connections
+    for(I = 1, AdvEntityMarker:count())
+    {
+        local Parent = holoEntity(BoneHierarchy[I, number])
+        holoParent(I, Parent)
+    }
+	
+	   function void scaleBonesHolo(Scale:number)
+	   {
+		      for(I = 1, AdvEntityMarker:count())
+		      {
+			         holoScale(I, vec(Scale)) 
+		      }
+	   }
+	
+	   function void linkBones(LinkHoloSize:number)
+	   {
+		      for(I = 2, AdvEntityMarker:count())
+		      {
+			         local Ent = AdvEntityMarker[I, entity]
+			         local Parent = holoEntity(BoneHierarchy[I, number])
+        
+			         local ID = I + 40
+			         local Dist = holoEntity(I):pos():distance(Parent:pos())
+			         local Dir = (Parent:pos() - holoEntity(I):pos()):normalized()
+			         holoCreate(ID)
+			         holoPos(ID, holoEntity(I):pos() + Dir*Dist*0.5)
+			         holoScale(ID, vec(Dist*0.08, LinkHoloSize, LinkHoloSize))
+			         holoAng(ID, Dir:toAngle())
+			         holoParent(ID, Parent)
+		      }
+	   }
+    
+    #######
+    # Create a duplicate mecha, recommended if you want to test your mecha without respawning it
+    # via adv dupe2 everytime
+    ##
+    function number setupMechaDuplicate()
+    {
+    
+    switch(Status)
+    {
+        case 0, #Find acf stock entities and offset mecha pos, it turns out you cannot use propSpawn to spawn other entity class than prop_physics
+        
+        holoPos(0, holoEntity(0):pos() + SpawnOffset)
+		
+        findInSphere(WeaponStockMarker:pos(), 200)
+        local R = findToArray()
+		      for(I = 1, R:count())
+		      {
+			         local Ent = R[I, entity]
+			         if(Ent:acfNameShort():length() == 0) #oh no this is ugli
+				            { continue }
+    
+            #TOFIX: It turns out acf entities can be both ammo and guns! weird thing to fix later
+            local StockTable = table()
+            local Type = Ent:acfTypeName()
+    
+            switch(Type)
+            {
+                case "ammo", StockTable = AmmoStockTable, break
+                case "fuel", StockTable = FuelStockTable, break
+                case "engine", StockTable = EngineStockTable, break  
+                case "gun", StockTable = WeaponStockTable, break  
+            }
+    
+            if(acfIsConsummable(Type))
+            {
+                local ID = Ent:aabbSize():length()
+                if(StockTable[ID, array]:count() == 0)
+                    { StockTable[ID, array] = array() }
+				            StockTable[ID, array]:pushEntity(Ent)
+            }
+            else
+            {
+                local ID = Ent:acfName()
+                StockTable[ID, entity] = Ent   
+            }
+		      }
+		      Status++
+		      break
+        
+		
+        case 1, #register mecha props to duplicate later
+        
+        while(perf(90))
+        {
+            PropStep++
+            if(PropStep > AdvEntityMarker:count())
+            {
+                Status++, PropStep = 0, break
+            }
+		
+            local BaseProp = AdvEntityMarker[PropStep, entity] 
+            #register props that are parented to a bone, if theres no props parented then it will search for constrained props
+            local StartI = 1
+            local Constraints = BaseProp:children()
+            if(Constraints:count() == 0)
+            {
+                Constraints = BaseProp:getConnectedEntities()    
+                StartI = 2
+            }
+		          for(I = StartI, Constraints:count())
+			         {
+				            local Ent = Constraints[I, entity]
+				            local IsACF = (Ent:acfNameShort():length() > 0)
+                
+                #TODO: add weapon holstering 
+                
+				            PropIsACF:pushNumber( IsACF )
+				            if(Ent:isVehicle())
+				            {
+					               SeatEnt = Ent
+				            }
+				            PropSpawnList:pushEntity(Ent)
+				            PropParentList:pushEntity(holoEntity(PropStep))
+			         }
+		      }
+		      break
+
+		
+        case 2, #duplicate the mecha's prop and move acf stock entities
+		      
+        if(propCanCreate())
+		      {
+			         PropStep++
+			         if(PropStep > PropSpawnList:count())
+				            {Status++, PropStep = 0, break}
+			
+			         local Ent = PropSpawnList[PropStep, entity]
+			         local Pos = Ent:pos()
+			         local Ang = Ent:angles()
+			         local Mass = Ent:mass()
+			         local NewProp = noentity()
+			
+			         if(Ent == SeatEnt)
+			         {
+				            SeatPos = Seat:pos(), SeatAng = Seat:angles()
+                NewProp = Seat
+                Seat:setPos(Pos + SpawnOffset)
+                Seat:setAng(Ang)
+                PropDelayedParent:pushVector2( vec2(Seat:id(), PropParentList[PropStep, entity]:id()) )
+			         }
+			         else
+			         {
+                if(PropIsACF[PropStep, number])
+				            {
+                    local StockTable = table()
+                    local EntityTable = table()
+                    local List = array()
+
+                    local Type = Ent:acfTypeName()
+    
+                    switch(Type)
+                    {
+                        case "ammo", StockTable = AmmoStockTable, List = AmmoList, break
+                        case "fuel", StockTable = FuelStockTable, List = FuelList, break
+                        case "engine", StockTable = EngineStockTable, List = EngineList, break    
+                        case "gun", StockTable = WeaponStockTable, List = WeaponList break
+                        default, print("Found unknown type: "+Ent:acfType()+" ACF entity: "+Ent:acfName())
+                    }
+        
+                    if(acfIsConsummable(Type))
+                    {
+                        local ID = Ent:aabbSize():length()
+						                  if(StockTable[ID, array]:count() > 0)
+						                  {
+							                     NewProp = StockTable[ID, array]:popEntity()   
+						                  }
+						                  else
+						                  {
+							                     print("No suitable replacement found for "+Ent:acfName())
+						                  }
+                    }
+                    else
+                    {
+                        NewProp = StockTable[Ent:acfName(), entity]
+                        #if(NewProp) { print("Found entity") } else { print("Failed to find entity"+Ent:acfName()+" Type: "+Type) }
+                    }
+                    
+                    List:pushEntity(NewProp)
+					               NewProp:setPos(Pos + SpawnOffset), NewProp:setAng(Ang)
+					               PropDelayedParent:pushVector2(vec2(NewProp:id(), PropParentList[PropStep, entity]:id()))
+				            }
+				            else
+				            {
+				                NewProp = propSpawn(Ent, Pos + SpawnOffset, Ang, 1)
+				                NewProp:setMass(Mass)
+					               NewProp:parentTo(PropParentList[PropStep, entity])
+				            }
+                
+            }
+			
+            NewProp:setColor( Ent:getColor(), Ent:getAlpha() )
+				        NewProp:setMaterial( Ent:getMaterial() )
+            Props:pushEntity(NewProp)
+        }
+		      break
+        
+        default, #Duplicate mecha setup is over
+            return 1
+    }
+    
+        return 0
+    }
+    
+    #######
+    # Use this instead if the mecha is finished
+    ##
+    function number setupMecha()
+    {
+        switch(Status)
+        {
+            case 0,
+                while(perf(90))
+                {
+                    PropStep++
+                    if(PropStep > AdvEntityMarker:count())
+                    {
+                        Status++, PropStep = 0, break
+                    }
+		
+                    local BaseProp = AdvEntityMarker[PropStep, entity] 
+                    #register props that are parented to a bone, if theres no props parented then it will search for constrained props
+                    local StartI = 1
+                    local Constraints = BaseProp:children()
+                    if(Constraints:count() == 0)
+                    {
+                        Constraints = BaseProp:getConnectedEntities()    
+                        StartI = 2
+                    }
+		                  for(I = StartI, Constraints:count())
+			                 {
+				                    local Ent = Constraints[I, entity]
+				                    local IsACF = (Ent:acfNameShort():length() > 0)
+                
+                        #TODO: add weapon holstering 
+                
+				                    PropIsACF:pushNumber( IsACF )
+				                    if(Ent:isVehicle())
+				                    {
+					                       SeatEnt = Ent
+				                    }
+				                    PropSpawnList:pushEntity(Ent)
+				                    PropParentList:pushEntity(holoEntity(PropStep))
+                        Ent:constraintBreak()
+                        Ent:deparent()
+			                 }
+		              }
+            break    
+            
+            case 1,
+                PropStep++
+			         if(PropStep > PropSpawnList:count())
+				            {Status++, PropStep = 0, break}
+			
+			         local Ent = PropSpawnList[PropStep, entity]
+			         local Pos = Ent:pos()
+			         local Ang = Ent:angles()
+			         local Mass = Ent:mass()
+			
+			         if(Ent == SeatEnt)
+			         {
+				            SeatPos = Seat:pos(), SeatAng = Seat:angles()
+                Ent:propDelete()
+                Ent = Seat
+                Ent:setPos(Pos)
+                Ent:setAng(Ang)
+                PropDelayedParent:pushVector2( vec2(Ent:id(), PropParentList[PropStep, entity]:id()) )
+			         }
+			         else
+			         {
+                if(PropIsACF[PropStep, number])
+				            {
+                    local StockTable = table()
+                    local EntityTable = table()
+                    local List = array()
+
+                    local Type = Ent:acfTypeName()
+    
+                    switch(Type)
+                    {
+                        case "ammo", List = AmmoList, break
+                        case "fuel", List = FuelList, break
+                        case "engine", List = EngineList, break    
+                        case "gun", List = WeaponList break
+                        default, print("Found unknown type: "+Ent:acfType()+" ACF entity: "+Ent:acfName())
+                    }
+                    
+                    List:pushEntity(Ent)
+				            }
+                Ent:parentTo(PropParentList[PropStep, entity])
+            }
+			
+            Props:pushEntity(Ent)
+            break
+            
+            default,
+                return 1
+        }
+        
+        return 0
+    }
+    
+    function void setAnimCallback(GroupID:number, Func:string)
+    {
+        GroupHasCallback[GroupID, number] = 1
+        GroupCallback[GroupID, string] = Func
+    }
+    
+    function void loadAnim(GroupID:number, Name:string, InFPS:number)
+    {
+        if(GroupID) #Load animation on a single body-group if it is specified
+        {
+            GroupAnim[GroupID, table] = AnimationTable[Name, table]
+            GroupFPS[GroupID, number] = InFPS
+            GroupAnimationInfo[GroupID, vector2] = vec2(systime(), AnimationInfo[Name, table]["frames", number])
+            GroupTick[GroupID, number] = 1
+            GroupHasCallback[GroupID, number] = 0
+                        
+            if(GroupID == 1)    #Group 1 should always contain the pelvis
+            {
+                PelvisAnim = PelvisOffsets[Name, array]   
+            }
+        }
+        else
+        {
+            for(I = 1, BoneGroups:count())
+            {
+                GroupAnim[I, table] = AnimationTable[Name, table]
+                GroupFPS[I, number] = InFPS
+                GroupAnimationInfo[I, vector2] = vec2(systime(), AnimationInfo[Name, table]["frames", number])
+                GroupTick[I, number] = 1
+                GroupHasCallback[GroupID, number] = 0
+            }
+            PelvisAnim = PelvisOffsets[Name, array]
+        }
+        
+    }
+    
+    function void loadAnim(Groups:array, Name:string, InFPS:number)
+    {
+        for(I = 1, Groups:count())
+        {
+            loadAnim(Groups[I, number], Name, InFPS)    
+        }    
+    }
+    
+    #Functions that can be used in chat
+	   function void loadAnimCMD(Args:array)
+    {
+        local Name = Args[1, string]
+        local GroupID = (Args:count() > 1 ? Args[2, string]:toNumber() : 0)
+        local FPS = (Args:count() > 2 ? Args[3, string]:toNumber() : 60)
+        
+        loadAnim(GroupID, Name, FPS)
+        IsTaunting = 1
+    }
+    
+	   register_cmd("anim", "loadAnimCMD")
+    
+    rangerHitEntities(0)
+    
+    #Feel free to modify
+    MechaHeight = rangerOffset(BaseEnt:pos(), BaseEnt:pos() - vec(0,0,1000)):distance() - 15
+	   ScaleHeight = vec(MechaHeight/37.9)
+    
+    runOnTick(1)
+	   runOnLast(1)
+}
+elseif(last()) #Cleanup mecha and move the seat back to where it was if e2 is deleted or updated
+{
+    for(I = 1, Props:count())
+	   {
+		      local Ent = Props[I, entity]
+		      if(Ent != Seat)
+			         { Ent:propDelete() }
+		      else
+		      {
+			         Ent:deparent()
+			         Ent:setPos(SeatPos)
+			         Ent:setAng(SeatAng)
+		      }
+    }
+}
+elseif(!Ready)
+{
+    local SetupIsOver = ( DuplicateMecha ? setupMechaDuplicate() : setupMecha() )
+    
+    if(SetupIsOver)
+    {
+        #Delayed parent entities
+        for(I = 1, PropDelayedParent:count())
+		      {
+			         local ParentIDs = PropDelayedParent[I, vector2]
+			         entity(ParentIDs:x()):parentTo(entity(ParentIDs:y()))
+		      }
+        #print("Wep: "+WeaponList:count()+" Eng: "+EngineList:count()+" Amm: "+AmmoList:count()+" Fue: "+FuelList:count())
+		      
+        #Link every weapon to every ammo... you can easily do better than that
+        for(I = 1, WeaponList:count())
+        {
+			         local Ent = WeaponList[I, entity]
+            for(J = 1, AmmoList:count())
+            {
+                local Ammo = AmmoList[J, entity]   
+                Ent:acfLinkTo(Ammo, 0) 
+            }
+			
+		      }
+        #Link every engine to every fuel box
+        for(I = 1, EngineList:count())
+        {
+            local Ent = EngineList[I, entity]
+            for(J = 1, FuelList:count())
+            {
+                local Fuel = FuelList[I, entity]
+                Ent:acfLinkTo(Fuel, 0)
+            }    
+        }
+		      
+		      Ready = 1
+    }
+}
+
+#Perf 97, because if you ever make a mecha with 400 props it might hit that number randomly when the server is lagging
+elseif(perf(97)) 
+{
+    #This is the main animation group
+    for(I = 1, BoneGroups:count())
+    {
+        local Info = GroupAnimationInfo[I, vector2]
+        local AnimationTime = (systime() - Info:x())
+        local Tick = ceil( (AnimationTime * GroupFPS[I, number]) % Info:y())
+        
+        if(GroupHasCallback[I, number])
+        {
+            if(Tick < GroupTick[I, number])
+            {
+                GroupCallback[I, string]()
+                GroupHasCallback[I, number] = 0    
+            }    
+        }
+        GroupTick[I, number] = Tick
+        
+        local Anim = GroupAnim[I, table]
+        
+        local BoneITT = BoneGroups[I, array]
+        for(J = 1, BoneITT:count())
+        {
+            local Bone = BoneITT[J, number]
+            local A = Anim[Bone, array][Tick, angle]
+            holoAng(Bone, holoEntity(BoneHierarchy[Bone, number]):toWorld(A))
+        }
+    }
+
+    OffsetPelvis = (FreezePelvis ? vec(0) : holoEntity(0):toWorldAxis(PelvisAnim[GroupTick[1, number], vector]*ScaleHeight))
+}
+
+
+

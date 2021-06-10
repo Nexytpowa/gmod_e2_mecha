@@ -1,0 +1,33 @@
+@persist AELines:array AECallback:string AEString:string AEDelim:string AEParse AEPos
+
+if(first())
+{
+	function void string:explodeAsync(Delim:string, Callback:string)
+	{
+		AEParse = 1
+		AELines = array()
+		AECallback = Callback
+		AEDelim = Delim
+		AEString = This
+	}
+}
+
+interval(50)
+
+if(AEParse)
+{
+	while(perf(90))
+	{
+		local Start = AEPos + 1
+		local End = AEString:find(AEDelim, Start)
+		
+		local Out = AEString:sub(Start, End-1)
+		AELines:pushString(Out)
+		AEPos = End
+		if(!End)
+		{
+			AECallback(AELines),
+			AEParse = 0, break
+		}
+	}
+}

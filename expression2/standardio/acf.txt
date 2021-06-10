@@ -1,0 +1,21 @@
+@persist AcfConsummableTypeStrings:table
+
+AcfConsummableTypeStrings = table(
+	"ammo" = 1,
+	"fuel" = 1
+)
+
+# Returns acf entity type as string
+function string entity:acfTypeName()
+{
+	if(This:acfIsAmmo()) { return "ammo" }
+	elseif(This:acfIsFuel()) { return "fuel" }
+	elseif(This:acfIsEngine()) { return "engine" }
+	elseif(This:acfIsGun()) { return "gun" }
+}
+
+# Returns if type is consummable
+function number acfIsConsummable(TypeName:string)
+{
+	return AcfConsummableTypeStrings[TypeName, number]
+}

@@ -1,0 +1,228 @@
+@name smd_converter
+@outputs BoneAnimations:table PelvisOffset:table
+@persist BoneOrder:table
+@persist InputQueue:array InputStep OutputFileName:string
+@persist Parsing Writing Optimizing AnimClk WriteString:string WriteHeader:string EXP
+@persist FrameDifference
+@persist StepLine TotalFrames FileLines:array FileLineCount
+@persist StepWriteX StepWriteY
+#include "stdio"
+#include "mecha_mk2/mecha_biped"
+
+if(first())
+{
+    #This e2 was designed to work in singleplayer
+    concmd("wire_expression2_quotasoft 1000000")
+    concmd("wire_expression2_quotahard 1000000")
+    concmd("wire_expression2_quotatick 1000000")
+    EXP = 6 #max number string length, can greatly change file size!
+    function void onFileExploded(Read:array)
+    {
+        FileLines = Read
+        FileLineCount = FileLines:count()
+        local NodeStart = 0, local NodeEnd = 0
+        for(I = 1, 100)
+        {
+            if(FileLines[I, string]:find("nodes"))
+                {NodeStart = I+1}
+            elseif(FileLines[I, string]:find("end"))
+                {NodeEnd = I-1, break}    
+        }
+        print("NodeStart: "+NodeStart+" NodeEnd: "+NodeEnd)
+        
+        #Get each bone converted ID
+        for(I = NodeStart, NodeEnd)
+        {
+            local Line = FileLines[I, string]
+            local EndNum = Line:find(" ", 3) - 1
+            local StartName = Line:find("\"") + 1
+            local EndName = Line:find("\"", StartName) - 1
+            
+            local BoneNum = Line:sub(3, EndNum)
+            local BoneName = Line:sub(StartName, EndName)
+            if(ValidBoneTable:exists(BoneName))
+            {
+                BoneOrder[BoneNum, number] = ValidBoneTable[BoneName, number]
+                BoneAnimations:pushArray(array())
+            }
+        }
+        print("Total valid bones found: "+BoneAnimations:count()+"/"+ValidBoneTable:count())
+        
+        #PARSE!!!
+        Parsing = 1, StepLine = NodeEnd + 3
+    }
+    function void onFileLoaded(Read:string)
+    {
+        BoneAnimations:clear()
+        PelvisOffset:clear()
+        TotalFrames = 0
+        FrameDifference = 0
+        
+        Read:explodeAsync("\n", "onFileExploded")
+    }
+    function void onListLoaded(Files:array)
+    {
+        InputQueue = Files:clone()
+        for(I = 1, InputQueue:count())
+        {
+            if(InputQueue[I, string]:find(".txt") == 0) #the file isn't a .txt? ignore
+                {InputQueue:removeString(I), continue}  
+        }
+        AnimClk = 1
+        print("Total input files in queue: "+InputQueue:count())
+    }
+    
+    function string vector:toString(MaxChar:number)
+    {
+        local Vec = vec((abs(This:x()) < 0.01 ? 0 : This:x()), (abs(This:y()) < 0.01 ? 0 : This:y()), (abs(This:z()) < 0.01 ? 0 : This:z()))
+        return Vec:x():toString():sub(1, MaxChar) + " "
+            + Vec:y():toString():sub(1,  MaxChar) + " "
+            + Vec:z():toString():sub(1,  MaxChar)
+    }
+    function string angle:toString(MaxChar:number)
+    {
+        local Ang = ang((abs(This:pitch()) < 0.01 ? 0 : This:pitch()), (abs(This:yaw()) < 0.01 ? 0 : This:yaw()), (abs(This:roll()) < 0.01 ? 0 : This:roll()))
+        return Ang:pitch():toString():sub(1, MaxChar) + " "
+            + Ang:yaw():toString():sub(1,  MaxChar) + " "
+            + Ang:roll():toString():sub(1,  MaxChar)
+    }
+    function number angle:length()
+    {
+        return This:pitch() + This:yaw() + This:roll()    
+    }
+    fileList("smd-input/", "onListLoaded")
+
+}
+
+if(Parsing)
+{
+    while(perf(90))
+    {
+        local Line = FileLines[StepLine, string]
+        local Words = Line:explodeRE(" ")
+        if(Words:count() <= 4)
+        {
+            if(Line:find("time"))
+            {
+                TotalFrames++
+                for(I = 1, ValidBoneTable:count())
+                {
+                    local Array = BoneAnimations[I, array]
+                    Array:pushAngle(Array[Array:count()+1, angle])
+                }
+                PelvisOffset:pushVector(PelvisDefaultPos)
+            }
+        }
+        else #5 = boneID
+        {
+            local FalseBoneID = Words[5, string]
+            if(BoneOrder:exists(FalseBoneID)) #Ignore not-supported bones (like fingers)
+            {
+                local RealBoneID = BoneOrder[FalseBoneID, number]
+                local Ang = ang(Words[10, string]:toNumber(), Words[11, string]:toNumber(), Words[9, string]:toNumber())
+                Ang /= 0.01745329 #pi/180
+                local Array = BoneAnimations[RealBoneID, array]
+                Array[Array:count(), angle] = Ang
+                
+                if(RealBoneID == 1) #is pelvis bone?
+                {
+                    PelvisOffset[PelvisOffset:count(), vector] = vec(Words[7, string]:toNumber(), Words[6, string]:toNumber(), Words[8, string]:toNumber())
+                }
+            }
+        }
+        
+        StepLine++
+        if(StepLine >= FileLineCount)
+        {
+            print("File parsing is over! now optimizing... Total frames: "+TotalFrames)
+            Parsing = 0, Optimizing = 1, StepWriteX = StepWriteY = 1,
+            break
+        }
+    }
+}
+
+switch(Optimizing) #Converts XX frames of static "animation" into a 1 frame pose
+{
+    case 1,
+        while(perf(90))
+        {
+            local Arr = BoneAnimations[StepWriteY, array]
+            FrameDifference += abs(Arr[StepWriteX, angle]:length() - Arr[StepWriteX+1, angle]:length())
+            StepWriteX++
+            if(StepWriteX+1 > TotalFrames)
+            {
+                StepWriteX = 1, StepWriteY++
+                if(StepWriteY > ValidBoneTable:count())
+                {
+                    StepWriteX = StepWriteY = 1, Optimizing++, break    
+                }
+            }
+        }
+    break
+    case 2,
+        print("Bone difference: "+FrameDifference)
+        if(FrameDifference < 1.0)
+        {
+            TotalFrames = 1   
+        }
+        
+        WriteString = ""
+        WriteHeader = ""+TotalFrames+" frames\n"
+        WriteHeader += BoneAnimations:count()+" bones\n"
+        fileQueueWrite(OutputFileName, WriteHeader)
+        
+        Writing = 1, Optimizing = 0
+    break
+}
+
+switch(Writing)
+{
+    case 1,
+        while(perf(90))
+        {
+            WriteString += PelvisOffset[StepWriteX, vector]:toString(EXP) + "\n"
+            
+            StepWriteX++
+            
+            if(StepWriteX > TotalFrames)
+            {
+                StepWriteX = 1
+                Writing = 2, break    
+            }
+        }
+    
+    case 2,
+        while(perf(90))
+        {
+            local Out = BoneAnimations[StepWriteY, array][StepWriteX, angle]:toString(EXP) + "\n"
+        
+            WriteString += Out
+            StepWriteX++
+            if(StepWriteX > TotalFrames)
+            {
+                StepWriteX = 1, StepWriteY++   
+                if(StepWriteY > ValidBoneTable:count())
+                {
+                    StepWriteX = StepWriteY = Writing = 0
+                    print("File exported!"), AnimClk = 1, break
+                }
+            }
+        }
+    break
+}
+
+if(WriteString:length() > 1)
+{
+    fileQueueAppend(OutputFileName, WriteString)
+    WriteString = ""
+}
+elseif(AnimClk)
+{
+    if(InputStep < InputQueue:count())
+    {
+        InputStep++, AnimClk = 0
+        OutputFileName = InputQueue[InputStep, string]:replace("wos_fn_", "")
+        print("FileLoad: "+OutputFileName)
+        fileLoad("smd-input/"+InputQueue[InputStep, string], "onFileLoaded")  
+    }
+}

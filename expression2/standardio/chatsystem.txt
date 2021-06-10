@@ -1,0 +1,47 @@
+@persist ChatCommands:table
+
+if(first())
+{
+	function void register_cmd(ChatCMD:string, FuncName:string)
+	{
+		ChatCommands[ChatCMD, string] = FuncName
+	}
+	
+    runOnChat(1)      
+}
+
+
+# Chat command handling
+if(chatClk())
+{
+    local Said = lastSaid()
+    local Args = array()
+	
+	if(Said[1] == "!")
+	{
+		Said = Said:replace("!", "")
+		local LastChar = 0
+		local LastValidChar = 0
+		while(1)
+		{
+			LastChar = Said:find(" ", LastChar) + 1
+			if(Said[LastChar] != " ")
+			{
+				local Argument = Said:sub(LastValidChar, LastChar-2)
+				Args:pushString(Argument:replace(" ", ""))
+				LastValidChar = LastChar
+			}
+			if(LastChar == 1)
+				{break}
+		}
+    
+		local ChatFunction = Args[1, string]
+		Args:removeString(1)
+		if(ChatCommands:exists(ChatFunction))
+		{
+			ChatCommands[ChatFunction, string](Args)
+		}
+	}
+}
+# Chat command handling
+
