@@ -1,46 +1,50 @@
-@persist ChatCommands:table
+#Standard chat support, adds command to function handling 
+#updated 10/06/21
+@persist ChatCommands:table ChatCommandsDesc:table
 
 if(first())
 {
-	function void register_cmd(ChatCMD:string, FuncName:string)
+	function void register_cmd(ChatCMD:string, FuncName:string, Description:string)
 	{
 		ChatCommands[ChatCMD, string] = FuncName
+		ChatCommandsDesc[ChatCMD, string] = Description
 	}
+	
+	function void register_cmd(ChatCMD:string, FuncName:string)
+	{
+		register_cmd(ChatCMD, FuncName, "No description set for this command.")
+	}
+	
+	function void printAllCommands(Args:array)
+	{
+		local Keys = ChatCommandsDesc:keys()
+		for(I = 1, Keys:count())
+		{
+			local CMD = Keys[I, string]
+			local Desc = ChatCommandsDesc[CMD, string]
+			print("'"+CMD+"'"+ " -- "+Desc)
+		}
+	}
+	
+	register_cmd("!commands", "printAllCommands", "Print all available commands.")
+	
+	print(entity():getName()+": Chat system ready! type !commands for a list of commands.")
 	
     runOnChat(1)      
 }
 
 
 # Chat command handling
-if(chatClk())
+if(chatClk(owner()))
 {
     local Said = lastSaid()
-    local Args = array()
+    local Args = Said:explode(" ")
 	
-	if(Said[1] == "!")
+	local ChatFunction = Args[1, string]
+	if(ChatCommands:exists(ChatFunction))
 	{
-		Said = Said:replace("!", "")
-		local LastChar = 0
-		local LastValidChar = 0
-		while(1)
-		{
-			LastChar = Said:find(" ", LastChar) + 1
-			if(Said[LastChar] != " ")
-			{
-				local Argument = Said:sub(LastValidChar, LastChar-2)
-				Args:pushString(Argument:replace(" ", ""))
-				LastValidChar = LastChar
-			}
-			if(LastChar == 1)
-				{break}
-		}
-    
-		local ChatFunction = Args[1, string]
 		Args:removeString(1)
-		if(ChatCommands:exists(ChatFunction))
-		{
-			ChatCommands[ChatFunction, string](Args)
-		}
+		ChatCommands[ChatFunction, string](Args)
 	}
 }
 # Chat command handling
