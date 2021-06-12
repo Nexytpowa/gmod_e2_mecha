@@ -30,10 +30,14 @@ if(first())
     MoveSpeed = 250
     RunSpeedCoef = 1.7
     JumpForce = 350
-    DuplicateMecha = 0 #change this if you want to respawn a new mecha, i'd recommend letting it at 1
+    DuplicateMecha = 1 #change this if you want to respawn a new mecha, i'd recommend letting it at 1
     DefaultFOV = 90
     ZoomLevel = 4
     CamOffset = vec(0,0,0)
+    
+    #offset mecha height, in case the mech's foots are not touching the ground, the second variable changes the pelvis position scale during animations
+    MechaHeightOffset = -5
+    MechaAnimScale = 1
     
     MoveSpeed *= tickInterval()
     JumpForce *= tickInterval()
@@ -54,7 +58,7 @@ if(first())
     rangerHitEntities(1)
     
     UnRoll = 1
-    HoldingWep = 1 #Change this variable if you don't want to aim
+    HoldingWep = 1 #Change this variable if you don't want to aim with the gun
     
     CamHoloID = 90
     local ParentBone = 13

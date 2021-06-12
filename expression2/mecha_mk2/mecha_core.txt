@@ -12,6 +12,7 @@
 @persist [WeaponList EngineList FuelList AmmoList]:array
 @persist BaseEnt:entity SeatEnt:entity SeatPos:vector SeatAng:angle
 @persist IsTaunting
+@persist MechaHeightOffset MechaAnimScale
 
 #Alpha version, don't mind the mess if you got the e2 now instead of waiting!
 #NOTE: most of the code was written in notepad, so don't mind the weird formatting
@@ -25,6 +26,8 @@ if(first())
     #include "mecha_mk2/mecha_biped"
 	
     SpawnOffset = -vec(20,100,0)
+    MechaAnimScale = 1
+    MechaHeightOffset = 0
 	
     if(AdvEntityMarker:count() == 0) #no linked bones
         {print("Entity marker has 0 bones attached. EXIT"), exit()}
@@ -413,13 +416,9 @@ if(first())
         IsTaunting = 1
     }
     
-	   register_cmd("anim", "loadAnimCMD")
+	   register_cmd("!anim", "loadAnimCMD")
     
     rangerHitEntities(0)
-    
-    #Feel free to modify
-    MechaHeight = rangerOffset(BaseEnt:pos(), BaseEnt:pos() - vec(0,0,1000)):distance() - 15
-	   ScaleHeight = vec(MechaHeight/37.9)
     
     runOnTick(1)
 	   runOnLast(1)
@@ -475,6 +474,9 @@ elseif(!Ready)
             }    
         }
 		      
+        rangerFilter(Props)
+        MechaHeight = rangerOffset(BaseEnt:pos(), BaseEnt:pos() - vec(0,0,1000)):distance() + MechaHeightOffset
+        ScaleHeight = vec(MechaHeight/37.9) * MechaAnimScale
 		      Ready = 1
     }
 }
