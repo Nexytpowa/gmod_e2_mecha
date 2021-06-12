@@ -5,7 +5,7 @@
 @persist Pos:vector Ang:angle EyeDir:vector MoveSpeed RunSpeedCoef JumpForce DuckSpeed LastGoodPos:vector LastKeys ZVelocity 
 @persist InJump ChangedInAir
 @persist HoldingWep OnEntityPos:vector OnEntity OnWhichEntity:entity CamHoloID:number CamHolo:entity NextPos:vector
-@persist CurrentWeapon:entity DefaultFOV ZoomLevel
+@persist CurrentWeapon:entity DefaultFOV ZoomLevel CamOffset:vector
 @trigger all
 
 #Mecha E2 made by Nexy STEAM_0:1:63923714, feel free to ask questions or make suggestions
@@ -30,9 +30,10 @@ if(first())
     MoveSpeed = 250
     RunSpeedCoef = 1.7
     JumpForce = 350
-    DuplicateMecha = 1 #change this if you want to respawn a new mecha, i'd recommend letting it at 1
+    DuplicateMecha = 0 #change this if you want to respawn a new mecha, i'd recommend letting it at 1
     DefaultFOV = 90
     ZoomLevel = 4
+    CamOffset = vec(0,0,0)
     
     MoveSpeed *= tickInterval()
     JumpForce *= tickInterval()
@@ -58,7 +59,7 @@ if(first())
     CamHoloID = 90
     local ParentBone = 13
     CamHolo = holoCreate(CamHoloID), holoScale(CamHoloID, vec(0))
-    holoPos(CamHoloID, holoEntity(ParentBone):pos() + vec(10,0,0))
+    holoPos(CamHoloID, holoEntity(ParentBone):pos() + CamOffset)
     holoParent(CamHoloID, ParentBone)
     
     CamPos = holoEntity(CamHoloID):pos()
