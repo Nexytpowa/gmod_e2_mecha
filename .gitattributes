@@ -1,2 +1,2 @@
-expression2/ linguist-language=C++
-*.txt linguist-language=C++
+expression2/ linguist-language=
+*.txt linguist-language=
